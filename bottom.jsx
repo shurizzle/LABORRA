@@ -1,27 +1,38 @@
+import React from 'react/cjs/react.production.min.js';
 import { css, styled } from 'uebersicht';
 import spotify from './lib/spotify';
 import { used } from './lib/storage';
+import mem from './lib/mem';
+import sysctl from './lib/sysctl';
+import * as format from './lib/format';
 
 import Meter from './lib/meter';
+import Bar, { Left, Center, Right } from './lib/bar';
+import ChildrenWithSeparator from './lib/children-with-separator';
 
 import SpotifyIcon from './lib/icons/spotify';
+import RAMIcon from './lib/icons/ram';
+import FolderIcon from './lib/icons/folder';
 
-const SIZE = 11;
+const SIZE = 12;
 const PADDING = 5;
 
-const spotifyIconClass = css({
+const TIDS = {};
+
+const iconClass = css({
     marginRight: PADDING,
+    color: '#069',
 });
 
 const meterClass = css({
     height: SIZE,
-    width: '10%',
+    width: `calc(100% - ${SIZE + PADDING * 2}px - 75%)`,
     boxSizing: 'border-box',
-    border: '1px solid #abb2bf',
+    border: '1px solid #069',
     marginLeft: PADDING,
 
     '& > div': {
-        backgroundColor: '#abb2bf',
+        backgroundColor: '#069',
     },
 });
 
@@ -32,7 +43,7 @@ const Root = styled('div')({
 
 const Track = styled('marquee')({
     display: 'inline-block',
-    maxWidth: '20%',
+    width: `calc(100% - ${SIZE + PADDING * 2}px - 25%)`,
     whiteSpace: 'nowrap',
     overflowX: '-webkit-marquee',
     WebkitMarqueeDirection: 'backwards',
@@ -47,6 +58,7 @@ export const refreshFrequency = false;
 export const initialState = {
     spotify: null,
     storage: {},
+    mem: 0,
 };
 
 function updateDiskAction(name, usage) {
@@ -57,28 +69,59 @@ function updateDiskAction(name, usage) {
     };
 }
 
+function updateMem(dispatch) {
+    const fn = () => {
+        mem().then(m => dispatch({ type: 'MEM_UPDATE', data: m }))
+            .catch((e) => {console.error(e)})
+            .then(() => TIDS.mem = setTimeout(fn, 5000));
+    };
+
+    return fn;
+}
+
 function updateStorage(dispatch) {
+    // const fn = () => {
+    //     used('/').then(usage => dispatch(updateDiskAction('root', usage)))
+    //         .catch(() => dispatch(updateDiskAction('root', null)))
+    //         .then(() => {
+    //             used('72920524-97C6-3751-BB67-B400F17DF049')
+    //                 .then(usage => dispatch(updateDiskAction('ext', usage)))
+    //                 .catch(() => dispatch(updateDiskAction('ext', null)))
+    //                 .then(() => TIDS.storage = setTimeout(fn, 10000));
+    //         });
+    // };
+
     const fn = () => {
         used('/').then(usage => dispatch(updateDiskAction('root', usage)))
             .catch(() => dispatch(updateDiskAction('root', null)))
-            .then(() => {
-                used('72920524-97C6-3751-BB67-B400F17DF049')
-                    .then(usage => dispatch(updateDiskAction('ext', usage)))
-                    .catch(() => dispatch(updateDiskAction('ext', null)))
-                    .then(() => setTimeout(fn, 10000));
-            });
+            .then(() => TIDS.storage = setTimeout(fn, 10000));
     };
 
     return fn;
 }
 
 export const init = (dispatch) => {
-    setInterval(() => {
-        spotify().then(data => dispatch({type: 'SPOTIFY_UPDATE', data})).
-            catch(() => dispatch({type: 'SPOTIFY_UPDATE', data: null}));
-    }, 1000);
+    sysctl.init().then(() => {
+        if (TIDS.storage) {
+            clearTimeout(TIDS.storage);
+        }
 
-    setTimeout(updateStorage(dispatch), 10000);
+        if (TIDS.spotify) {
+            clearInterval(TIDS.spotify);
+        }
+
+        if (TIDS.mem) {
+            clearTimeout(TIDS.mem);
+        }
+
+        TIDS.spotify = setInterval(() => {
+            spotify().then(data => dispatch({type: 'SPOTIFY_UPDATE', data})).
+                catch(() => dispatch({type: 'SPOTIFY_UPDATE', data: null}));
+        }, 1000);
+
+        updateStorage(dispatch)();
+        updateMem(dispatch)();
+    });
 };
 
 export const className = {
@@ -95,15 +138,25 @@ export const className = {
     backgroundColor: '#333',
 };
 
+const Separator = styled('div')({
+    marginLeft: PADDING * 2,
+    marginRight: PADDING * 2,
+    display: 'inline-block',
+    width: 1,
+    height: '1em',
+    backgroundColor: '#069',
+    verticalAlign: 'top',
+});
+
 const Spotify = props => {
     if (props && (props.state === 'playing' || props.state === 'paused')) {
         const track = `${props.artist} - ${props.name}`;
         return (
-            <div>
-                <SpotifyIcon className={spotifyIconClass} />
+            <React.Fragment>
+                <SpotifyIcon className={iconClass} />
                 <Track>{track}</Track>
                 <Meter className={meterClass} min={0} max={props.duration} value={props.position} />
-            </div>
+            </React.Fragment>
         );
     }
 
@@ -113,7 +166,24 @@ const Spotify = props => {
 export const render = (state) => {
     return (
         <Root>
-            <Spotify { ...state.spotify } />
+            <Bar>
+                <Left style={{ width: `calc(30% + ${SIZE + PADDING * 2}px)` }}>
+                    <Spotify { ...state.spotify } />
+                </Left>
+                <Center />
+                <Right>
+                    <ChildrenWithSeparator separator={<Separator />}>
+                        <React.Fragment>
+                            <RAMIcon className={iconClass} />
+                            {format.percent(state.mem)}
+                        </React.Fragment>
+                        <React.Fragment>
+                            <FolderIcon className={iconClass} />
+                            {format.percent(state.storage.root)}
+                        </React.Fragment>
+                    </ChildrenWithSeparator>
+                </Right>
+            </Bar>
         </Root>
     );
 }
@@ -131,6 +201,11 @@ export const updateState = (event, previousState) => {
                 ...previousState.storage,
                 [event.name]: event.usage,
             },
+        };
+    } else if (event.type === 'MEM_UPDATE') {
+        return {
+            ...previousState,
+            mem: event.data,
         };
     }
 
