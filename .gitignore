@@ -1,1 +1,3 @@
 /node_modules
+/lib/cpu.cmd
+/lib/mem.cmd
