@@ -1,0 +1,26 @@
+{
+  "name": "laborra",
+  "version": "0.0.1",
+  "description": "LA BARRA!",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shurizzle/LABORRA.git"
+  },
+  "author": "Domenico Shura <shura1991@gmail.com>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shurizzle/LABORRA/issues"
+  },
+  "homepage": "https://github.com/shurizzle/LABORRA#readme",
+  "dependencies": {
+    "classnames": "^2.2.6",
+    "react": "^16.8.4"
+  }
+}
