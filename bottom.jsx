@@ -3,7 +3,7 @@ import { css, styled } from 'uebersicht';
 import spotify from './lib/spotify';
 import { used } from './lib/storage';
 import mem from './lib/mem';
-import sysctl from './lib/sysctl';
+import cpu from './lib/cpu';
 import * as format from './lib/format';
 
 import Meter from './lib/meter';
@@ -12,6 +12,7 @@ import ChildrenWithSeparator from './lib/children-with-separator';
 
 import SpotifyIcon from './lib/icons/spotify';
 import RAMIcon from './lib/icons/ram';
+import CPUIcon from './lib/icons/cpu';
 import FolderIcon from './lib/icons/folder';
 
 const SIZE = 12;
@@ -59,6 +60,7 @@ export const initialState = {
     spotify: null,
     storage: {},
     mem: 0,
+    cpu: [],
 };
 
 function updateDiskAction(name, usage) {
@@ -72,7 +74,7 @@ function updateDiskAction(name, usage) {
 function updateMem(dispatch) {
     const fn = () => {
         mem().then(m => dispatch({ type: 'MEM_UPDATE', data: m }))
-            .catch((e) => {console.error(e)})
+            .catch(()=>{})
             .then(() => TIDS.mem = setTimeout(fn, 5000));
     };
 
@@ -100,28 +102,41 @@ function updateStorage(dispatch) {
     return fn;
 }
 
+function updateCpu(dispatch) {
+    const fn = () => {
+        cpu().then(data => dispatch({ type: 'CPU_UPDATE', data }))
+            .catch(()=>{})
+            .then(() => TIDS.cpu = setTimeout(fn, 2000));
+    };
+
+    return fn;
+}
+
 export const init = (dispatch) => {
-    sysctl.init().then(() => {
-        if (TIDS.storage) {
-            clearTimeout(TIDS.storage);
-        }
+    if (TIDS.storage) {
+        clearTimeout(TIDS.storage);
+    }
 
-        if (TIDS.spotify) {
-            clearInterval(TIDS.spotify);
-        }
+    if (TIDS.spotify) {
+        clearInterval(TIDS.spotify);
+    }
 
-        if (TIDS.mem) {
-            clearTimeout(TIDS.mem);
-        }
+    if (TIDS.mem) {
+        clearTimeout(TIDS.mem);
+    }
 
-        TIDS.spotify = setInterval(() => {
-            spotify().then(data => dispatch({type: 'SPOTIFY_UPDATE', data})).
-                catch(() => dispatch({type: 'SPOTIFY_UPDATE', data: null}));
-        }, 1000);
+    if (TIDS.cpu) {
+        clearTimeout(TIDS.cpu);
+    }
 
-        updateStorage(dispatch)();
-        updateMem(dispatch)();
-    });
+    TIDS.spotify = setInterval(() => {
+        spotify().then(data => dispatch({type: 'SPOTIFY_UPDATE', data})).
+            catch(() => dispatch({type: 'SPOTIFY_UPDATE', data: null}));
+    }, 1000);
+
+    updateStorage(dispatch)();
+    updateMem(dispatch)();
+    updateCpu(dispatch)();
 };
 
 export const className = {
@@ -155,13 +170,33 @@ const Spotify = props => {
             <React.Fragment>
                 <SpotifyIcon className={iconClass} />
                 <Track>{track}</Track>
-                <Meter className={meterClass} min={0} max={props.duration} value={props.position} />
+                <Meter
+                    className={meterClass}
+                    min={0}
+                    max={props.duration}
+                    value={props.position} />
             </React.Fragment>
         );
     }
 
     return null;
 };
+
+const Cpu = ({ state, ...props }) => {
+    if (state.length < 2) {
+        return null;
+    }
+
+    const usage = cpu.usage(cpu.diff(state[0], state[1]))
+        .reduce((a, x) => a + x) / state[1].length;
+
+    return (
+        <React.Fragment>
+            <CPUIcon className={iconClass} />
+            {format.percent(usage)}
+        </React.Fragment>
+    );
+}
 
 export const render = (state) => {
     return (
@@ -177,6 +212,7 @@ export const render = (state) => {
                             <RAMIcon className={iconClass} />
                             {format.percent(state.mem)}
                         </React.Fragment>
+                        { state.cpu.length == 2 && <Cpu state={state.cpu} /> }
                         <React.Fragment>
                             <FolderIcon className={iconClass} />
                             {format.percent(state.storage.root)}
@@ -206,6 +242,17 @@ export const updateState = (event, previousState) => {
         return {
             ...previousState,
             mem: event.data,
+        };
+    } else if (event.type === 'CPU_UPDATE') {
+        let cpu = previousState.cpu;
+        if (cpu.length > 1) {
+            cpu = [cpu[1], event.data];
+        } else {
+            cpu.push(event.data);
+        }
+        return {
+            ...previousState,
+            cpu,
         };
     }
 
