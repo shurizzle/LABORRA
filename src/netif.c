@@ -12,7 +12,8 @@
 #include <objc/objc.h>
 #include <objc/objc-runtime.h>
 #include <SystemConfiguration/SystemConfiguration.h>
-#include <SystemConfiguration/CaptiveNetwork.h>
+
+#include "json.h"
 
 typedef enum InterfaceType {
     _6_TO_4,
@@ -158,9 +159,11 @@ int main(void) {
     }
     pool = objc_msgSend(pool, sel_registerName("init"));
 
+    bool is_first = true;
     char **wifi_ifaces = get_wifi_supported_interfaces();
     CFArrayRef network_interfaces = SCNetworkInterfaceCopyAll();
     CFIndex num_interfaces = CFArrayGetCount(network_interfaces);
+    putchar('[');
     for (CFIndex i = 0; i < num_interfaces; i++) {
         SCNetworkInterfaceRef interface = (SCNetworkInterfaceRef) CFArrayGetValueAtIndex(network_interfaces, i);
         CFStringRef bsdname_CFString = SCNetworkInterfaceGetBSDName(interface);
@@ -192,33 +195,31 @@ int main(void) {
         }
         char *bssid = NULL;
         char *ssid = NULL;
-        bool is_active = false;
 
-        if (type == IEEE80211 && is_in_array(bsdname, wifi_ifaces)) {
-            get_wifi_infos(bsdname, &bssid, &ssid, &is_active);
+        if (is_up && type == IEEE80211 && is_in_array(bsdname, wifi_ifaces)) {
+            get_wifi_infos(bsdname, &bssid, &ssid, &is_up);
         }
 
-        // if (type == ETHERNET) {
-        //     CFDictionaryRef conf = SCNetworkInterfaceGetConfiguration(interface);
-        //     if (conf) {
-        //         CFNumberRef if_power_on_ref = (CFNumberRef)CFDictionaryGetValue(conf, kSCPropNetAirPortPowerEnabled);
-        //         CFNumberTypeRef t = CFNumberGetType(if_power_on_ref);
-        //         int tmp = 0;
-        //         CFNumberGetValue(if_power_on_ref, t, &tmp);
-        //         CFRelease(if_power_on_ref);
-        //         CFRelease(t);
-        //         CFRelease(conf);
-        //         is_active = !!tmp;
-        //     }
-        // }
+        if (type == IEEE80211 || type == ETHERNET) {
+            if (is_first) {
+                is_first = false;
+            } else {
+                putchar(',');
+            }
 
-        printf("bsdname: %s\nfriendly_name: %s\ntype: %d\nup: %s\n", bsdname, friendly_name, type, is_up ? "true" : "false");
-
-        printf("bssid: %s\nssid: %s\n", bssid, ssid);
-
-        printf("active: %s\n", is_active ? "true" : "false");
-
-        printf("\n");
+            printf("{\"device\":");
+            json_print_string(stdout, bsdname);
+            printf(",\"name\":");
+            json_print_string(stdout, friendly_name);
+            printf(",\"type\":");
+            json_print_string(stdout, type == IEEE80211 ? "wifi" : "wired");
+            printf(",\"up\":%s", is_up ? "true" : "false");
+            printf(",\"bssid\":");
+            json_print_string(stdout, bssid);
+            printf(",\"ssid\":");
+            json_print_string(stdout, ssid);
+            putchar('}');
+        }
 
         if (bsdname) {
             free(bsdname);
@@ -233,6 +234,7 @@ int main(void) {
             free(ssid);
         }
     }
+    putchar(']');
     free_string_array(wifi_ifaces);
     return 0;
 }
